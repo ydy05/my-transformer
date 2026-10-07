@@ -108,11 +108,11 @@ class BilingualDataset(Dataset):
         )
 
         return {
-            "encoder_input": encoder_input,
-            "decoder_input": decoder_input,
-            "encoder_mask": encoder_mask,
-            "decoder_mask": decoder_mask,
-            "label": label,
+            "encoder_input": encoder_input, #(seq_len)
+            "decoder_input": decoder_input, #(seq_len)
+            "encoder_mask": encoder_mask,   #(1, 1, seq_len)
+            "decoder_mask": decoder_mask,   #(1, seq_len, seq_len)
+            "label": label, #(seq_len)
             "src_text": src_text,
             "tgt_text": tgt_text
         }
