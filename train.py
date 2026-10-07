@@ -20,74 +20,74 @@ from tqdm import tqdm
 
 
 
-# def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_len, device):
+def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_len, device):
 
-#     sos_idx = tokenizer_tgt.token_to_id("[SOS]")
-#     eos_idx = tokenizer_tgt.token_to_id("[EOS]")
+    sos_idx = tokenizer_tgt.token_to_id("[SOS]")
+    eos_idx = tokenizer_tgt.token_to_id("[EOS]")
 
-#     # Encoder 只计算一次
-#     encoder_output = model.encode(source, source_mask)
+    # Encoder 只计算一次
+    encoder_output = model.encode(source, source_mask)
 
-#     # Decoder 初始输入：[SOS]
-#     decoder_input = torch.tensor([[sos_idx]], dtype=source.dtype, device=device)
+    # Decoder 初始输入：[SOS]
+    decoder_input = torch.tensor([[sos_idx]], dtype=source.dtype, device=device)
 
-#     while decoder_input.size(1) < max_len:
+    while decoder_input.size(1) < max_len:
 
-#         # 屏蔽未来 Token
-#         decoder_mask = causal_mask(decoder_input.size(1)).to(device)
+        # 屏蔽未来 Token
+        decoder_mask = causal_mask(decoder_input.size(1)).to(device)
 
-#         # Decoder 输出
-#         decoder_output = model.decode(decoder_input, encoder_output, source_mask, decoder_mask)
+        # Decoder 输出
+        decoder_output = model.decode(decoder_input, encoder_output, source_mask, decoder_mask)
 
-#         # 只预测最后一个位置
-#         prob = model.project(decoder_output[:, -1])
+        # 只预测最后一个位置
+        prob = model.project(decoder_output[:, -1])
 
-#         # Greedy Search：选概率最大的 Token
-#         next_word = torch.argmax(prob, dim=1).item()
+        # Greedy Search：选概率最大的 Token
+        next_word = torch.argmax(prob, dim=1).item()
 
-#         # 拼接预测结果
-#         decoder_input = torch.cat([decoder_input, torch.tensor([[next_word]], dtype=source.dtype, device=device)], dim=1)
+        # 拼接预测结果
+        decoder_input = torch.cat([decoder_input, torch.tensor([[next_word]], dtype=source.dtype, device=device)], dim=1)
 
-#         # 遇到 [EOS] 停止
-#         if next_word == eos_idx:
-#             break
+        # 遇到 [EOS] 停止
+        if next_word == eos_idx:
+            break
 
-#     return decoder_input.squeeze(0)
+    return decoder_input.squeeze(0)
 
 
-# def run_validation(model, validation_ds, tokenizer_src, tokenizer_tgt, max_len, device, print_msg, global_step, writer, num_examples=2):
+def run_validation(model, validation_ds, tokenizer_src, tokenizer_tgt, max_len, device, print_msg, global_step, writer, num_examples=2):
 
-#     model.eval()
-#     count = 0
+    model.eval()
+    count = 0
 
-#     # 验证阶段不计算梯度
-#     with torch.no_grad():
-#         for batch in validation_ds:
+    # 验证阶段不计算梯度
+    with torch.no_grad():
+        for batch in validation_ds:
 
-#             encoder_input = batch["encoder_input"].to(device)
-#             encoder_mask = batch["encoder_mask"].to(device)
+            encoder_input = batch["encoder_input"].to(device)
+            encoder_mask = batch["encoder_mask"].to(device)
 
-#             # 验证时 batch_size=1
-#             assert encoder_input.size(0) == 1
+            # 验证时 batch_size=1
+            assert encoder_input.size(0) == 1
 
-#             # 生成翻译结果
-#             model_out = greedy_decode(model, encoder_input, encoder_mask, tokenizer_src, tokenizer_tgt, max_len, device)
+            # 生成翻译结果
+            model_out = greedy_decode(model, encoder_input, encoder_mask, tokenizer_src, tokenizer_tgt, max_len, device)
 
-#             source_text = batch["src_text"][0]
-#             target_text = batch["tgt_text"][0]
+            source_text = batch["src_text"][0]
+            target_text = batch["tgt_text"][0]
 
-#             # Token IDs -> 中文文本
-#             model_out_text = tokenizer_tgt.decode(model_out.cpu().tolist(), skip_special_tokens=True)
+            # Token IDs -> 中文文本
+            model_out_text = tokenizer_tgt.decode(model_out.cpu().tolist(), skip_special_tokens=True)
 
-#             # 打印结果
-#             print_msg("-" * 80)
-#             print_msg(f"SOURCE:    {source_text}")
-#             print_msg(f"TARGET:    {target_text}")
-#             print_msg(f"PREDICTED: {model_out_text}")
+            # 打印结果
+            print_msg("-" * 80)
+            print_msg(f"SOURCE:    {source_text}")
+            print_msg(f"TARGET:    {target_text}")
+            print_msg(f"PREDICTED: {model_out_text}")
 
-#             count += 1
-#             if count >= num_examples:
-#                 break
+            count += 1
+            if count >= num_examples:
+                break
 
 def get_all_sentences(ds, lang):
     for item in ds:
@@ -171,7 +171,8 @@ def get_ds(config):
 
     train_ds_raw, val_ds_raw = random_split(
         ds_raw,
-        [train_ds_size, val_ds_size]
+        [train_ds_size, val_ds_size],
+        generator=torch.Generator().manual_seed(42)
     )
 
     train_ds = BilingualDataset(train_ds_raw, tokenizer_src, tokenizer_tgt, config['lang_src'], config['lang_tgt'], config['seq_len'])
@@ -221,11 +222,13 @@ def train_model(config):
 
     loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer_tgt.token_to_id('[PAD]'), label_smoothing=0.1).to(device)
     for epoch in range(initial_epoch, config["num_epochs"]):
-        model.train()
+        
 
         batch_iterator = tqdm(train_dataloader, desc=f"Processing epoch {epoch:02d}")
 
         for batch in batch_iterator:
+            model.train()
+
             encoder_input = batch["encoder_input"].to(device)  # (B, Seq_Len)
             decoder_input = batch["decoder_input"].to(device)  # (B, Seq_Len)
             encoder_mask = batch["encoder_mask"].to(device)    # (B, 1, 1, Seq_Len)
@@ -254,7 +257,7 @@ def train_model(config):
             optimizer.zero_grad()
 
             global_step += 1
-
+        run_validation(model, val_dataloader, tokenizer_src, tokenizer_tgt, config['seq_len'], device, lambda msg: batch_iterator.write(msg), global_step, writer)
         #Save the model at the end of every epoch
         model_filename = get_weights_file_path(config, f'{epoch:02d}')
         torch.save(
